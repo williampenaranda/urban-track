@@ -9,6 +9,7 @@ from geoalchemy2.shape import to_shape
 from geoalchemy2 import Geometry
 from shapely.geometry import Point
 from app.models.custom_types import PointInResponse
+from uuid import UUID # Para manejar UUIDs de Pydantic
 
 # --- Esquemas de Autenticación y Gestión de Usuarios ---
 
@@ -94,16 +95,6 @@ class CalculateRouteRequest(BaseModel):
     origen_lon: float = Field(..., description="Longitud de la ubicación de origen del usuario.")
     destino_lat: float = Field(..., description="Latitud de la ubicación de destino del usuario.")
     destino_lon: float = Field(..., description="Longitud de la ubicación de destino del usuario.")
-
-# Esquema para la respuesta de /get_buses
-class BusLocationResponse(BaseModel):
-    bus_uuid: str
-    ruta_id: int
-    latitude: float
-    longitude: float
-    velocidad: float
-    estado: str
-    ultima_actualizacion: Optional[datetime] # Puede ser None si no hay fecha
 
 # ============================================================================
 # --- Esquemas para las Paradas (usando UbicacionLatLon para la ubicación) ---
@@ -276,3 +267,38 @@ class IrregularityVoteResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- NUEVOS MODELOS PARA EL SISTEMA DE TRACKING (Añadir) ---
+class UserTrackingStartRequest(BaseModel):
+    user_id: int
+    selected_route_id: Optional[int] = None # Opcional, si el usuario ya sabe qué ruta quiere seguir
+
+class UserSetOnBusRequest(BaseModel):
+    user_id: int
+    reported_route_id: int # La ruta que el usuario declara estar tomando
+    is_on_bus: bool = True # Debe ser True para indicar que está a bordo
+
+class UserTrackingStopRequest(BaseModel):
+    user_id: int
+
+# Este modelo es para los datos enviados por el WebSocket
+class UserLocationUpdateWS(BaseModel):
+    latitude: float
+    longitude: float
+    speed: Optional[float] = 0.0
+    heading: Optional[float] = 0.0
+
+# Este modelo es para las respuestas de los buses virtuales
+class BusLocationResponse(BaseModel):
+    id: UUID
+    route_id: int
+    latitude: float
+    longitude: float
+    current_speed: float
+    current_heading: float
+    assigned_user_ids: List[int]
+    last_update: datetime
+    status: str
+
+    class Config:
+        from_attributes = True # O `orm_mode = True` si usas Pydantic v1.x
