@@ -7,9 +7,11 @@ from app.database import engine, Base, get_db
 from app.models.entities import UserTrackingSession, UserLocationHistory, Usuario
 from app.models.models import UserLocationUpdateWS
 from app.services.clustering_service import clustering_service # Importa la instancia del servicio
-from geoalchemy2.shape import to_shape
+from geoalchemy2.shape import to_shape, from_shape
 from shapely.geometry import Point as ShapelyPoint
 from datetime import datetime
+from geoalchemy2.elements import WKBElement # <--- NEW ESSENTIAL IMPORT!
+import shapely.wkb # <--- ¡CAMBIO AQUÍ!
 import asyncio
 
 # --- IMPORTS DE LOS ROUTERS ---
@@ -80,14 +82,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, db: Session = D
                 await websocket.send_json({"error": "Invalid location data"})
                 continue
 
-            user_point = ShapelyPoint(location_update.longitude, location_update.latitude)
+            user_point_shapely = ShapelyPoint(location_update.longitude, location_update.latitude)
+
+            # --- LA ASIGNACIÓN CON EL CAMBIO ---
+            ubicacion_wkb_element = WKBElement(shapely.wkb.dumps(user_point_shapely, hex=False), srid=4326)
+
             new_location = UserLocationHistory(
                 user_id=user_id,
-                ubicacion=user_point,
+                ubicacion=ubicacion_wkb_element, # Assign the WKBElement
                 speed=location_update.speed,
                 heading=location_update.heading,
                 timestamp=datetime.utcnow()
             )
+            # --------------------------
+
             db.add(new_location)
             db.commit()
             db.refresh(new_location)
