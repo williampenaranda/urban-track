@@ -13,7 +13,7 @@ import '../main.dart';
 
 class DireccionesScreen extends StatefulWidget {
   final Position? initialPosition;
-  const DireccionesScreen({Key? key, this.initialPosition}) : super(key: key);
+  const DireccionesScreen({super.key, this.initialPosition});
 
   @override
   State<DireccionesScreen> createState() => _DireccionesScreenState();
@@ -37,15 +37,10 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   String _loadingMessage = '';
   bool _isInBusMode = false;
   String? _currentBusRoute;
+  bool _isFetchingRutas = false;
 
-  // Lista de ejemplo de rutas. En una implementación real, esto vendría de una API.
-  final List<String> _rutasDisponibles = [
-    'Ruta 101',
-    'Ruta 102',
-    'Ruta 203',
-    'Ruta Circular',
-    'Ruta Express',
-  ];
+  // Se convierte en una variable de estado que se llenará desde la API.
+  List<String> _rutasDisponibles = [];
 
   Widget _buildLocationMarker({bool isDestination = false}) {
     return Container(
@@ -64,6 +59,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchRutasDisponibles(); // Llama al método para obtener las rutas al iniciar.
     if (widget.initialPosition != null) {
       _latitude = widget.initialPosition!.latitude;
       _longitude = widget.initialPosition!.longitude;
@@ -84,6 +80,48 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
     }
     // Centro por defecto: Cartagena
     return LatLng(10.3910, -75.4794);
+  }
+
+  Future<void> _fetchRutasDisponibles() async {
+    setState(() {
+      _isFetchingRutas = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/api/ruta/rutas'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<String> nombresRutas = data
+            .map((ruta) => ruta['nombre'] as String)
+            .toList();
+        setState(() {
+          _rutasDisponibles = nombresRutas;
+        });
+      } else {
+        // Manejar el error, tal vez mostrando un SnackBar.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudieron cargar las rutas.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al obtener rutas: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingRutas = false;
+        });
+      }
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -209,30 +247,32 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
-                    DropdownButtonFormField<String>(
-                      value: selectedRoute,
-                      hint: const Text('Selecciona tu ruta'),
-                      isExpanded: true,
-                      onChanged: (String? newValue) {
-                        setModalState(() {
-                          selectedRoute = newValue;
-                        });
-                      },
-                      items: _rutasDisponibles.map<DropdownMenuItem<String>>((
-                        String value,
-                      ) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.route),
-                      ),
-                    ),
+                    _isFetchingRutas
+                        ? const Center(child: CircularProgressIndicator())
+                        : DropdownButtonFormField<String>(
+                            value: selectedRoute,
+                            hint: const Text('Selecciona tu ruta'),
+                            isExpanded: true,
+                            onChanged: (String? newValue) {
+                              setModalState(() {
+                                selectedRoute = newValue;
+                              });
+                            },
+                            items: _rutasDisponibles
+                                .map<DropdownMenuItem<String>>((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(value),
+                                  );
+                                })
+                                .toList(),
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              prefixIcon: const Icon(Icons.route),
+                            ),
+                          ),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -412,7 +452,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       debugPrint('--------------------');
 
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/bus/calculate_route'),
+        Uri.parse('$apiBaseUrl/api/ruta/calculate_route'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
@@ -619,7 +659,6 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
               ),
               ElevatedButton(
                 onPressed: () => _showEndTripConfirmationDialog(context),
-                child: const Text('Finalizar'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade400,
                   foregroundColor: Colors.white,
@@ -631,6 +670,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                     vertical: 12,
                   ),
                 ),
+                child: const Text('Finalizar'),
               ),
             ],
           ),
@@ -665,14 +705,13 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
           ),
           actions: <Widget>[
             TextButton(
-              child: const Text('No'),
               onPressed: () {
                 Navigator.of(dialogContext).pop(); // Dismiss the dialog
               },
               style: TextButton.styleFrom(foregroundColor: Colors.white70),
+              child: const Text('No'),
             ),
             TextButton(
-              child: const Text('Sí, Finalizar'),
               onPressed: () {
                 Navigator.of(dialogContext).pop(); // Dismiss the dialog
                 setState(() {
@@ -684,6 +723,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                 foregroundColor: Colors.red.shade400,
                 backgroundColor: Colors.red.shade400.withOpacity(0.1),
               ),
+              child: const Text('Sí, Finalizar'),
             ),
           ],
         );
@@ -1340,8 +1380,7 @@ class RouteTimeline extends StatelessWidget {
   final List<Map<String, dynamic>> segments;
   final Function(LatLng)? onStopTap;
 
-  const RouteTimeline({Key? key, required this.segments, this.onStopTap})
-    : super(key: key);
+  const RouteTimeline({super.key, required this.segments, this.onStopTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1378,7 +1417,7 @@ class RouteStepItem extends StatelessWidget {
   final VoidCallback? onTap;
 
   const RouteStepItem({
-    Key? key,
+    super.key,
     required this.description,
     this.rutaNombre,
     required this.color,
@@ -1386,7 +1425,7 @@ class RouteStepItem extends StatelessWidget {
     this.isFirst = false,
     this.isLast = false,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
