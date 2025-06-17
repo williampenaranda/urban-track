@@ -15,7 +15,7 @@ import 'package:provider/provider.dart';
 import '../main.dart';
 
 class IrregularidadesScreen extends StatefulWidget {
-  const IrregularidadesScreen({Key? key}) : super(key: key);
+  const IrregularidadesScreen({super.key});
 
   @override
   State<IrregularidadesScreen> createState() => _IrregularidadesScreenState();

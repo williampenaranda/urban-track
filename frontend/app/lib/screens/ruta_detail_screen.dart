@@ -8,7 +8,7 @@ import 'package:app/screens/irregularidades_screen.dart';
 class RutaDetailScreen extends StatefulWidget {
   final Map<String, dynamic> ruta;
 
-  const RutaDetailScreen({Key? key, required this.ruta}) : super(key: key);
+  const RutaDetailScreen({super.key, required this.ruta});
 
   @override
   State<RutaDetailScreen> createState() => _RutaDetailScreenState();
