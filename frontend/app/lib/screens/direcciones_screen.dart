@@ -35,6 +35,8 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   bool showRouteResult = false;
   Map<String, dynamic>? routeResult;
   String _loadingMessage = '';
+  bool _isInBusMode = false;
+  String? _currentBusRoute;
 
   // Lista de ejemplo de rutas. En una implementación real, esto vendría de una API.
   final List<String> _rutasDisponibles = [
@@ -238,13 +240,10 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                             ? () {
                                 // Lógica para iniciar el tracking
                                 Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Iniciando seguimiento en la ruta: $selectedRoute',
-                                    ),
-                                  ),
-                                );
+                                setState(() {
+                                  _isInBusMode = true;
+                                  _currentBusRoute = selectedRoute;
+                                });
                               }
                             : null, // Deshabilitado si no hay ruta
                         style: ElevatedButton.styleFrom(
@@ -478,12 +477,20 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: !showRouteResult,
+      extendBody: !showRouteResult && !_isInBusMode,
       body: SafeArea(
         bottom: false,
         child: Stack(
           children: [
-            if (!showRouteResult) _buildSearchView() else _buildResultView(),
+            // Elige la vista principal a mostrar
+            if (_isInBusMode)
+              _buildInBusModeView()
+            else if (showRouteResult)
+              _buildResultView()
+            else
+              _buildSearchView(),
+
+            // El indicador de carga siempre va encima
             if (_isLoading)
               Container(
                 color: Colors.black.withOpacity(0.3),
@@ -508,16 +515,172 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: showRouteResult
-          ? _buildSolidNavBar()
-          : _buildFloatingNavBar(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showBusTrackingModal,
-        label: const Text('Estoy en el Bus'),
-        icon: const Icon(Icons.directions_bus),
-        backgroundColor: Colors.blue,
-      ),
+      bottomNavigationBar: _buildBottomBar(),
+      floatingActionButton: _buildFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  // Widget para construir la barra de navegación inferior dinámicamente
+  Widget? _buildBottomBar() {
+    if (_isInBusMode) return null; // Sin barra de navegación en modo bus
+    if (showRouteResult) return _buildSolidNavBar();
+    return _buildFloatingNavBar();
+  }
+
+  // Widget para construir el FAB dinámicamente
+  Widget? _buildFab() {
+    if (_isInBusMode || showRouteResult)
+      return null; // Sin FAB si se muestran resultados o en modo bus
+
+    return FloatingActionButton.extended(
+      onPressed: _showBusTrackingModal,
+      label: const Text('Estoy en el Bus'),
+      icon: const Icon(Icons.directions_bus),
+      backgroundColor: Colors.blue,
+    );
+  }
+
+  Widget _buildInBusModeView() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade800, Colors.lightBlue.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Sección superior con información de la ruta
+              Column(
+                children: [
+                  const SizedBox(height: 40),
+                  const Text(
+                    'Viajando en',
+                    style: TextStyle(fontSize: 22, color: Colors.white70),
+                  ),
+                  Text(
+                    _currentBusRoute ?? 'Ruta Desconocida',
+                    style: const TextStyle(
+                      fontSize: 42,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+
+              // Indicador de velocidad
+              _buildSpeedIndicator(),
+
+              // Botones de acción inferiores
+              _buildActionButtons(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeedIndicator() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withOpacity(0.1),
+            border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+          ),
+          child: const Column(
+            children: [
+              Text(
+                '42', // Velocidad de ejemplo
+                style: TextStyle(
+                  fontSize: 72,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                'km/h',
+                style: TextStyle(fontSize: 24, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Velocidad Actual',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 30),
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                // Lógica para reportar irregularidad
+              },
+              icon: const Icon(Icons.warning_amber_rounded),
+              label: const Text('Reportar Irregularidad'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.amber,
+                backgroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                setState(() {
+                  _isInBusMode = false;
+                  _currentBusRoute = null;
+                });
+              },
+              child: const Text('Finalizar Viaje'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white, width: 2),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
