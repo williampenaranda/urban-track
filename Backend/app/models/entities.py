@@ -2,10 +2,11 @@
 
 #Contiene los modelos especificos para uso de SLQAlchemy PostGIS
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 # --- Importaciones específicas para GeoAlchemy2 ---
 from geoalchemy2 import Geometry
@@ -174,3 +175,54 @@ class IrregularityVote(Base):
 
     user = relationship("Usuario", back_populates="votes")
     irregularity = relationship("ReportedIrregularity", back_populates="votes")
+
+   # --- NUEVAS/ACTUALIZADAS Tablas de Seguimiento (Exclusivamente estas) ---
+
+# --- NUEVAS CLASES DE ENTIDADES PARA EL SEGUIMIENTO (Añadir) ---
+class UserTrackingSession(Base):
+    __tablename__ = 'user_tracking_sessions'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('usuario.id'), nullable=False)
+    selected_route_id = Column(Integer, ForeignKey('ruta.id'))
+    reported_route_id = Column(Integer, ForeignKey('ruta.id'))
+    is_on_bus = Column(Boolean, default=False)
+    assigned_bus_id = Column(PG_UUID(as_uuid=True), ForeignKey('virtual_buses.id'), nullable=True) # <-- ¡AQUÍ ESTÁ LA CLAVE FORÁNEA!
+    start_time = Column(DateTime(timezone=True), default=func.now())
+    end_time = Column(DateTime(timezone=True))
+    status = Column(String(20), default='active') # 'active', 'inactive', 'completed'
+
+    # Relaciones:
+    usuario = relationship("Usuario", backref="tracking_sessions")
+    selected_ruta = relationship("Ruta", foreign_keys=[selected_route_id], backref="selected_by_sessions")
+    reported_ruta = relationship("Ruta", foreign_keys=[reported_route_id], backref="reported_by_sessions")
+
+    # Esta es la relación CRUCIAL que le dice a SQLAlchemy cómo unir UserTrackingSession con VirtualBus
+    # La clave foránea ya está en assigned_bus_id. Ahora definimos la relación ORM.
+    virtual_bus = relationship("VirtualBus", backref="assigned_sessions")
+
+class UserLocationHistory(Base):
+    __tablename__ = 'user_location_history'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('usuario.id'), nullable=False)
+    ubicacion = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
+    speed = Column(Float, default=0.0)
+    heading = Column(Float, default=0.0)
+    timestamp = Column(DateTime(timezone=True), default=func.now())
+
+    usuario = relationship("Usuario")
+
+
+class VirtualBus(Base):
+    __tablename__ = 'virtual_buses'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    route_id = Column(Integer, ForeignKey('ruta.id'))
+    ubicacion = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
+    current_speed = Column(Float, default=0.0)
+    current_heading = Column(Float, default=0.0)
+    assigned_user_ids = Column(ARRAY(Integer), default=[]) # IDs de usuarios que este bus "transporta"
+    last_update = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    status = Column(String(20), default='active') # 'active', 'inactive', 'paused'
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    # Relación con Ruta
+    ruta = relationship("Ruta", backref="virtual_buses")

@@ -1,68 +1,112 @@
-# main.py
+# app/main.py
 
-from fastapi import FastAPI
-from threading import Thread
-import time
-from contextlib import asynccontextmanager
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.database import engine, Base, get_db
+# Importa solo las entidades necesarias aquí, como UserTrackingSession y Usuario
+from app.models.entities import UserTrackingSession, UserLocationHistory, Usuario
+from app.models.models import UserLocationUpdateWS
+from app.services.clustering_service import clustering_service # Importa la instancia del servicio
+from geoalchemy2.shape import to_shape
+from shapely.geometry import Point as ShapelyPoint
+from datetime import datetime
+import asyncio
 
-# Importaciones de tu configuración de base de datos
-from app.database import Base, engine, get_db
-
-# Asegura que todos los modelos definidos en entities.py sean conocidos por SQLAlchemy
-# antes de que Base.metadata.create_all() sea llamado en el lifespan.
-import app.models.entities 
-
-# Importaciones de tus módulos de rutas
+# --- IMPORTS DE LOS ROUTERS ---
+from app.rutas.tracking import router as tracking_router
+from app.rutas.route_planning import router as route_planning_router # Asumiendo el nuevo nombre del archivo
+from app.irregularities.routes import router as irregularities_router # Importa el router de irregularidades
 from app.auth import routes as auth_routes
-from app.rutas.bus_routes import router as bus_router
-
-# Importación de la función de tu tarea de fondo
-from app.services.bus_tracking import run_bus_tracking_periodically
-
-#Importacion de la funcion de registrar irregularidades
-from app.irregularities.routes import router as irregularities_router
 
 
-# --- Manejo del ciclo de vida de la aplicación (Startup/Shutdown) con lifespan ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Gestiona los eventos de inicio y cierre de la aplicación.
-    Aquí se inicializan recursos y se inician tareas de fondo.
-    """
-    # --- Código que se ejecuta al INICIAR la aplicación ---
-    print("Iniciando creación de tablas de la base de datos...")
-    # Base.metadata.create_all() creará las tablas para TODOS los modelos
-    # que hayan sido importados/conocidos por Base.metadata hasta este punto.
-    Base.metadata.create_all(bind=engine)
-    print("Tablas de la base de datos verificadas/creadas.")
-  
-    print("Esperando 2 segundos para asegurar que las tablas estén disponibles...")
-    time.sleep(2) # Retraso de 2 segundos. Puedes ajustar si es necesario.
-    print("Continuando con el inicio de la tarea de fondo.")
-   
-    print("Iniciando tarea de cálculo y seguimiento de buses en segundo plano...")
-    background_thread = Thread(target=run_bus_tracking_periodically, args=(get_db,))
-    background_thread.daemon = True  # Asegura que el hilo se cerrará cuando la aplicación principal se cierre
-    background_thread.start()
-    print("Tarea de cálculo de buses iniciada.")
-
-    yield # La aplicación comienza a procesar solicitudes aquí
-
-    # --- Código que se ejecuta al CERRAR la aplicación ---
-    print("Aplicación cerrándose. Realizando limpieza de recursos...")
-    
 app = FastAPI(
-    title="API de Transporte Público Inteligente",
-    description="API para gestionar rutas, paradas, y cálculo de trayectos para buses y usuarios.",
-    version="1.0.0",
-    lifespan=lifespan
+    title="Transcaribe Tracking API",
+    description="API para el seguimiento de buses y usuarios de Transcaribe y reporte de irregularidades.",
+    version="0.1.0"
 )
 
+# --- INCLUIR LOS ROUTERS (Añadir/Modificar) ---
 app.include_router(auth_routes.router, prefix="/api/auth", tags=["Autenticación"])
-app.include_router(bus_router, prefix="/api/bus", tags=["Buses y Rutas"])
+app.include_router(tracking_router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(irregularities_router, prefix="/api/irregularities", tags=["Irregularidades"])
+app.include_router(route_planning_router, prefix="/api/ruta", tags=["Rutas"])
 
-@app.get("/api/health")
-async def health_check():
-    return {"status": "ok", "message": "API de Transporte Público está funcionando!"}
+
+# --- EVENTOS DE INICIO/APAGADO PARA CLUSTERING SERVICE (Añadir) ---
+@app.on_event("startup")
+async def startup_event():
+    print("Iniciando la creación de tablas (si no existen)...")
+    # Asegura que las tablas se creen ANTES de iniciar el servicio
+    # Esto puede tomar un momento, pero es sincrónico aquí
+    Base.metadata.create_all(bind=engine)
+    print("Tablas verificadas/creadas.")
+
+    # Puedes añadir un pequeño retraso aquí para mayor seguridad,
+    # aunque create_all() debería ser sincrónico y bloquear hasta que termine.
+    # await asyncio.sleep(1) # Opcional: Descomentar si aún experimentas el problema
+
+    print("Aplicación iniciada. Iniciando ClusteringService...")
+    clustering_service.start(get_db) # Pasa la función get_db al servicio
+    print("ClusteringService iniciado.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("Aplicación cerrándose. Deteniendo ClusteringService...")
+    clustering_service.stop()
+
+# --- WEB SOCKET ENDPOINT (Añadir) ---
+@app.websocket("/ws/location/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int, db: Session = Depends(get_db)):
+    """
+    Endpoint WebSocket para que los usuarios envíen actualizaciones de su ubicación en tiempo real.
+    Un usuario solo puede conectar si tiene una UserTrackingSession activa y está marcado como 'is_on_bus'.
+    """
+    user_session = db.query(UserTrackingSession).filter_by(user_id=user_id, status='active').first()
+    if not user_session or not user_session.is_on_bus:
+        print(f"Usuario {user_id} intentó conectar WebSocket sin sesión activa o no marcado 'is_on_bus'.")
+        # Cierra la conexión si no cumple las condiciones
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await websocket.accept()
+    print(f"Cliente {user_id} conectado al WebSocket de ubicación.")
+    try:
+        while True:
+            data = await websocket.receive_json()
+            try:
+                location_update = UserLocationUpdateWS(**data)
+            except Exception as e:
+                print(f"Error de validación de datos WS para {user_id}: {e}")
+                await websocket.send_json({"error": "Invalid location data"})
+                continue
+
+            user_point = ShapelyPoint(location_update.longitude, location_update.latitude)
+            new_location = UserLocationHistory(
+                user_id=user_id,
+                ubicacion=user_point,
+                speed=location_update.speed,
+                heading=location_update.heading,
+                timestamp=datetime.utcnow()
+            )
+            db.add(new_location)
+            db.commit()
+            db.refresh(new_location)
+
+            # Envía la actualización al servicio de clustering para procesamiento
+            await clustering_service.add_location_update({
+                "user_id": user_id,
+                "location": {"lat": location_update.latitude, "lon": location_update.longitude},
+                "speed": location_update.speed,
+                "heading": location_update.heading,
+                "timestamp": new_location.timestamp.isoformat()
+            })
+
+    except WebSocketDisconnect:
+        print(f"Cliente {user_id} desconectado del WebSocket.")
+    except Exception as e:
+        print(f"Error inesperado en WebSocket para {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Asegúrate de cerrar la sesión de DB
+        db.close()
