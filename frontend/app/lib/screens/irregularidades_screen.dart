@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:app/providers/auth_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import '../main.dart';
 
 class IrregularidadesScreen extends StatefulWidget {
   const IrregularidadesScreen({Key? key}) : super(key: key);
@@ -92,7 +93,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
   Future<void> _fetchIrregularities() async {
     try {
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:8000/api/irregularities/active'),
+        Uri.parse('$apiBaseUrl/api/irregularities/active'),
       );
 
       if (response.statusCode == 200) {
@@ -489,7 +490,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
       };
 
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/irregularities/report'),
+        Uri.parse('$apiBaseUrl/api/irregularities/report'),
         headers: {
           'Content-Type': 'application/json; charset=UTF-8',
           'Authorization': 'Bearer $authToken',
@@ -560,47 +561,31 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
     }
 
     final endpoint = isLike ? 'like' : 'dislike';
-    final url =
-        'http://10.0.2.2:8000/api/irregularities/vote/$irregularityId/$endpoint';
-
     try {
       final response = await http.post(
-        Uri.parse(url),
+        Uri.parse('$apiBaseUrl/api/irregularities/$irregularityId/$endpoint'),
         headers: {'Authorization': 'Bearer $authToken'},
       );
 
-      if (mounted) {
-        if (response.statusCode == 201) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Voto registrado con éxito.'),
-              backgroundColor: Colors.green,
-            ),
-          );
+      if (response.statusCode == 200) {
+        final updatedIrregularity = jsonDecode(utf8.decode(response.bodyBytes));
 
-          final updatedIrregularity = await _updateIrregularityData(
-            irregularityId,
-          );
-
-          _removeInfoWindow();
-          if (updatedIrregularity != null) {
-            // A small delay to allow the UI to settle before showing the new window
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (mounted) {
-                _showInfoWindow(context, updatedIrregularity);
-              }
-            });
-          }
-        } else {
-          final responseBody = jsonDecode(utf8.decode(response.bodyBytes));
-          final errorMessage =
-              responseBody['detail'] ?? 'No se pudo registrar el voto.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: $errorMessage'),
-              backgroundColor: Colors.red,
-            ),
-          );
+        // Update local state to reflect the vote
+        if (mounted) {
+          setState(() {
+            final index = _irregularities.indexWhere(
+              (ir) => ir['id'] == irregularityId,
+            );
+            if (index != -1) {
+              _irregularities[index] = updatedIrregularity;
+            }
+            // If the info window is open for this item, update it too
+            if (_selectedIrregularity?['id'] == irregularityId) {
+              _selectedIrregularity = updatedIrregularity;
+              // This re-triggers the overlay build
+              _showInfoWindow(context, updatedIrregularity);
+            }
+          });
         }
       }
     } catch (e) {
@@ -631,23 +616,11 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
 
     try {
       final response = await http.get(
-        Uri.parse(
-          'http://10.0.2.2:8000/api/irregularities/search/$irregularityId',
-        ),
-        headers: {'Authorization': 'Bearer $authToken'},
+        Uri.parse('$apiBaseUrl/api/irregularities/$irregularityId'),
       );
 
       if (response.statusCode == 200) {
-        final updatedIrregularity = jsonDecode(utf8.decode(response.bodyBytes));
-        final index = _irregularities.indexWhere(
-          (ir) => ir['id'] == irregularityId,
-        );
-        if (index != -1) {
-          setState(() {
-            _irregularities[index] = updatedIrregularity;
-          });
-        }
-        return updatedIrregularity;
+        return jsonDecode(utf8.decode(response.bodyBytes));
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

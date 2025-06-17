@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 
+const String apiBaseUrl = 'http://192.168.100.233:8000';
+
 void main() {
   runApp(
     ChangeNotifierProvider(

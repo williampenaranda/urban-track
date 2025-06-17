@@ -9,6 +9,7 @@ import 'dart:developer';
 import 'dart:ui'; // Necesario para ImageFilter
 import 'package:app/screens/rutas_screen.dart';
 import 'package:app/screens/irregularidades_screen.dart';
+import '../main.dart';
 
 class DireccionesScreen extends StatefulWidget {
   final Position? initialPosition;
@@ -412,7 +413,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       debugPrint('--------------------');
 
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/bus/calculate_route'),
+        Uri.parse('$apiBaseUrl/api/bus/calculate_route'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );

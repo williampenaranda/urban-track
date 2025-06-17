@@ -6,9 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'direcciones_screen.dart';
 import 'register_screen.dart';
-
-String urlServer = 'http://10.0.2.2:8000/api/auth/login';
-// String urlServer = 'http://192.168.1.48000/api/auth/login';
+import '../main.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -64,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse(urlServer),
+        Uri.parse('$apiBaseUrl/api/auth/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': _usernameController.text,
