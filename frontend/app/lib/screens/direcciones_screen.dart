@@ -477,43 +477,45 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: !showRouteResult && !_isInBusMode,
-      body: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: [
-            // Elige la vista principal a mostrar
-            if (_isInBusMode)
-              _buildInBusModeView()
-            else if (showRouteResult)
-              _buildResultView()
-            else
-              _buildSearchView(),
+      extendBody: true, // Permite que el cuerpo se extienda detrás de la barra
+      body: Stack(
+        children: [
+          // CAPA 1: El mapa siempre está de fondo
+          _buildMapView(),
 
-            // El indicador de carga siempre va encima
-            if (_isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.3),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Colors.blue),
-                      const SizedBox(height: 16),
-                      Text(
-                        _loadingMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+          // CAPA 2: Contenido que cambia según el estado
+          SafeArea(
+            bottom: false,
+            child: _isInBusMode
+                ? _buildInBusModeOverlay()
+                : showRouteResult
+                ? _buildResultView()
+                : _buildSearchView(),
+          ),
+
+          // CAPA 3: El indicador de carga siempre va encima de todo
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.blue),
+                    const SizedBox(height: 16),
+                    Text(
+                      _loadingMessage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
       bottomNavigationBar: _buildBottomBar(),
       floatingActionButton: _buildFab(),
@@ -523,15 +525,13 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
 
   // Widget para construir la barra de navegación inferior dinámicamente
   Widget? _buildBottomBar() {
-    if (_isInBusMode) return null; // Sin barra de navegación en modo bus
-    if (showRouteResult) return _buildSolidNavBar();
+    if (showRouteResult && !_isInBusMode) return _buildSolidNavBar();
     return _buildFloatingNavBar();
   }
 
   // Widget para construir el FAB dinámicamente
   Widget? _buildFab() {
-    if (_isInBusMode || showRouteResult)
-      return null; // Sin FAB si se muestran resultados o en modo bus
+    if (_isInBusMode || showRouteResult) return null;
 
     return FloatingActionButton.extended(
       onPressed: _showBusTrackingModal,
@@ -541,156 +541,193 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
     );
   }
 
-  Widget _buildInBusModeView() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade800, Colors.lightBlue.shade500],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Sección superior con información de la ruta
-              Column(
-                children: [
-                  const SizedBox(height: 40),
-                  const Text(
-                    'Viajando en',
-                    style: TextStyle(fontSize: 22, color: Colors.white70),
-                  ),
-                  Text(
-                    _currentBusRoute ?? 'Ruta Desconocida',
-                    style: const TextStyle(
-                      fontSize: 42,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-
-              // Indicador de velocidad
-              _buildSpeedIndicator(),
-
-              // Botones de acción inferiores
-              _buildActionButtons(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSpeedIndicator() {
-    return Column(
+  Widget _buildInBusModeOverlay() {
+    return Stack(
       children: [
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withOpacity(0.1),
-            border: Border.all(color: Colors.white.withOpacity(0.3), width: 2),
+        // Panel superior
+        Positioned(
+          top: 10,
+          left: 20,
+          right: 20,
+          child: _buildGlassmorphismContainer(
+            color: Colors.lightBlue.shade300,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Viajando en ruta',
+                        style: TextStyle(fontSize: 16, color: Colors.white70),
+                      ),
+                      Text(
+                        _currentBusRoute ?? 'Desconocida',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: const Column(
+        ),
+
+        // Elementos inferiores
+        Positioned(
+          bottom:
+              140, // Elevado para no superponerse con la barra de navegación
+          left: 20,
+          right: 20,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                '42', // Velocidad de ejemplo
-                style: TextStyle(
-                  fontSize: 72,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              // Panel de velocidad
+              _buildGlassmorphismContainer(
+                color: Colors.lightBlue.shade300,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.speed_outlined,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '42', // Velocidad de ejemplo
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'km/h',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                'km/h',
-                style: TextStyle(fontSize: 24, color: Colors.white70),
+              ElevatedButton(
+                onPressed: () => _showEndTripConfirmationDialog(context),
+                child: const Text('Finalizar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade400,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                ),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Velocidad Actual',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildActionButtons() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 30),
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                // Lógica para reportar irregularidad
-              },
-              icon: const Icon(Icons.warning_amber_rounded),
-              label: const Text('Reportar Irregularidad'),
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.amber,
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+  Future<void> _showEndTripConfirmationDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true, // user can tap outside to dismiss
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[850],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16.0),
+          ),
+          title: const Text(
+            'Finalizar Viaje',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: const SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(
+                  '¿Estás seguro de que deseas finalizar el viaje?',
+                  style: TextStyle(color: Colors.white70),
                 ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
+          actions: <Widget>[
+            TextButton(
+              child: const Text('No'),
               onPressed: () {
+                Navigator.of(dialogContext).pop(); // Dismiss the dialog
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.white70),
+            ),
+            TextButton(
+              child: const Text('Sí, Finalizar'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Dismiss the dialog
                 setState(() {
                   _isInBusMode = false;
-                  _currentBusRoute = null;
+                  resetToSearch();
                 });
               },
-              child: const Text('Finalizar Viaje'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white, width: 2),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red.shade400,
+                backgroundColor: Colors.red.shade400.withOpacity(0.1),
               ),
             ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper para crear los contenedores con efecto de vidrio
+  Widget _buildGlassmorphismContainer({required Widget child, Color? color}) {
+    final bgColor = color ?? Colors.white;
+    final isBlue = color != null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+          decoration: BoxDecoration(
+            color: bgColor.withOpacity(isBlue ? 0.4 : 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
           ),
-        ],
+          child: child,
+        ),
       ),
     );
   }
 
   Widget _buildFloatingNavBar() {
+    // Determinar el estilo basado en el modo actual
+    final bool isBusMode = _isInBusMode;
+    final Color navBarColor = isBusMode
+        ? Colors.lightBlue.shade300.withOpacity(0.4)
+        : Colors.white.withOpacity(0.8);
+    final Color selectedColor = isBusMode ? Colors.white : Colors.blue.shade700;
+    final Color unselectedColor = isBusMode ? Colors.white70 : Colors.black54;
+
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(12.0),
         margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
+          color: navBarColor,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
@@ -702,8 +739,8 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               type: BottomNavigationBarType.fixed,
-              selectedItemColor: Colors.black,
-              unselectedItemColor: Colors.black87,
+              selectedItemColor: selectedColor,
+              unselectedItemColor: unselectedColor,
               showUnselectedLabels: true,
               items: const [
                 BottomNavigationBarItem(
@@ -750,10 +787,10 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
 
   Widget _buildSolidNavBar() {
     return BottomNavigationBar(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.lightBlue.shade300,
       elevation: 8,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: Colors.black,
+      selectedItemColor: Colors.white,
       unselectedItemColor: Colors.black87,
       showUnselectedLabels: true,
       items: const [
@@ -787,206 +824,202 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
     );
   }
 
-  Widget _buildSearchView() {
-    // Usamos un Stack para superponer la UI de búsqueda sobre el mapa.
-    return Stack(
+  Widget _buildMapView() {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(center: _mapCenter, zoom: 15.0),
       children: [
-        // CAPA 1: El mapa ocupa todo el fondo.
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(center: _mapCenter, zoom: 15.0),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.app',
-            ),
-            MarkerLayer(
-              markers: [
-                if (_latitude != null && _longitude != null)
-                  Marker(
-                    point: LatLng(_latitude!, _longitude!),
-                    width: 40,
-                    height: 40,
-                    child: _buildLocationMarker(),
-                  ),
-                if (_endLatitude != null && _endLongitude != null)
-                  Marker(
-                    point: LatLng(_endLatitude!, _endLongitude!),
-                    width: 40,
-                    height: 40,
-                    child: _buildLocationMarker(isDestination: true),
-                  ),
-              ],
-            ),
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.app',
+        ),
+        MarkerLayer(
+          markers: [
+            if (_latitude != null && _longitude != null)
+              Marker(
+                point: LatLng(_latitude!, _longitude!),
+                width: 40,
+                height: 40,
+                child: _buildLocationMarker(),
+              ),
+            if (_endLatitude != null && _endLongitude != null)
+              Marker(
+                point: LatLng(_endLatitude!, _endLongitude!),
+                width: 40,
+                height: 40,
+                child: _buildLocationMarker(isDestination: true),
+              ),
           ],
         ),
+      ],
+    );
+  }
 
-        // CAPA 2: La UI de búsqueda flota encima del mapa.
-        SingleChildScrollView(
-          child: Column(
-            children: [
-              // Contenedor para la sombra y el margen
-              Container(
-                margin: const EdgeInsets.only(top: 40, left: 20, right: 20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
+  Widget _buildSearchView() {
+    // La UI de búsqueda flota encima del mapa.
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Contenedor para la sombra y el margen
+          Container(
+            margin: const EdgeInsets.only(top: 40, left: 20, right: 20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 15,
+                  spreadRadius: 2,
                 ),
-                // ClipRRect para que el desenfoque respete los bordes redondeados
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                    child: Container(
-                      padding: const EdgeInsets.all(24.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(20),
+              ],
+            ),
+            // ClipRRect para que el desenfoque respete los bordes redondeados
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.all(24.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'UrbanTrack',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 8),
+                      const Text(
+                        '¿A dónde vamos?',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
                         children: [
-                          const Text(
-                            'UrbanTrack',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            '¿A dónde vamos?',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _startController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Ubicación de inicio',
-                                    prefixIcon: Icon(
-                                      Icons.my_location,
-                                      color: Colors.blue,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.8),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
+                          Expanded(
+                            child: TextField(
+                              controller: _startController,
+                              decoration: InputDecoration(
+                                hintText: 'Ubicación de inicio',
+                                prefixIcon: Icon(
+                                  Icons.my_location,
                                   color: Colors.blue,
+                                ),
+                                border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
                                 ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.gps_fixed,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _getCurrentLocation,
-                                ),
+                                filled: true,
+                                fillColor: Colors.white.withOpacity(0.8),
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _endController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Destino',
-                                    prefixIcon: Icon(
-                                      Icons.location_on,
-                                      color: Colors.green,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.8),
-                                  ),
-                                  onChanged: _searchLocations,
-                                ),
+                          const SizedBox(width: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.gps_fixed,
+                                color: Colors.white,
                               ),
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.green,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.search,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _isLoading ? null : calculateRoute,
-                                ),
-                              ),
-                            ],
+                              onPressed: _getCurrentLocation,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Las sugerencias aparecen debajo de la tarjeta
-              if (_showSuggestions && _suggestions.isNotEmpty)
-                Container(
-                  height: 150,
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _endController,
+                              decoration: InputDecoration(
+                                hintText: 'Destino',
+                                prefixIcon: Icon(
+                                  Icons.location_on,
+                                  color: Colors.green,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                                filled: true,
+                                fillColor: Colors.white.withOpacity(0.8),
+                              ),
+                              onChanged: _searchLocations,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.search,
+                                color: Colors.white,
+                              ),
+                              onPressed: _isLoading ? null : calculateRoute,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    itemCount: _suggestions.length,
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        title: Text(_locationNames[index]),
-                        onTap: () => _selectLocation(
-                          _suggestions[index],
-                          _locationNames[index],
-                        ),
-                      );
-                    },
-                  ),
                 ),
-            ],
+              ),
+            ),
           ),
-        ),
-      ],
+
+          // Las sugerencias aparecen debajo de la tarjeta
+          if (_showSuggestions && _suggestions.isNotEmpty)
+            Container(
+              height: 150,
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _suggestions.length,
+                itemBuilder: (context, index) {
+                  return ListTile(
+                    title: Text(_locationNames[index]),
+                    onTap: () => _selectLocation(
+                      _suggestions[index],
+                      _locationNames[index],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
