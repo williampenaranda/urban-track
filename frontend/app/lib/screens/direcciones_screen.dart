@@ -13,7 +13,7 @@ import '../main.dart';
 
 class DireccionesScreen extends StatefulWidget {
   final Position? initialPosition;
-  const DireccionesScreen({Key? key, this.initialPosition}) : super(key: key);
+  const DireccionesScreen({super.key, this.initialPosition});
 
   @override
   State<DireccionesScreen> createState() => _DireccionesScreenState();
@@ -35,15 +35,12 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   bool showRouteResult = false;
   Map<String, dynamic>? routeResult;
   String _loadingMessage = '';
+  bool _isInBusMode = false;
+  String? _currentBusRoute;
+  bool _isFetchingRutas = false;
 
-  // Lista de ejemplo de rutas. En una implementación real, esto vendría de una API.
-  final List<String> _rutasDisponibles = [
-    'Ruta 101',
-    'Ruta 102',
-    'Ruta 203',
-    'Ruta Circular',
-    'Ruta Express',
-  ];
+  // Se convierte en una variable de estado que se llenará desde la API.
+  List<String> _rutasDisponibles = [];
 
   Widget _buildLocationMarker({bool isDestination = false}) {
     return Container(
@@ -62,6 +59,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchRutasDisponibles(); // Llama al método para obtener las rutas al iniciar.
     if (widget.initialPosition != null) {
       _latitude = widget.initialPosition!.latitude;
       _longitude = widget.initialPosition!.longitude;
@@ -82,6 +80,48 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
     }
     // Centro por defecto: Cartagena
     return LatLng(10.3910, -75.4794);
+  }
+
+  Future<void> _fetchRutasDisponibles() async {
+    setState(() {
+      _isFetchingRutas = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/api/ruta/rutas'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<String> nombresRutas = data
+            .map((ruta) => ruta['nombre'] as String)
+            .toList();
+        setState(() {
+          _rutasDisponibles = nombresRutas;
+        });
+      } else {
+        // Manejar el error, tal vez mostrando un SnackBar.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudieron cargar las rutas.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al obtener rutas: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingRutas = false;
+        });
+      }
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -207,30 +247,32 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
-                    DropdownButtonFormField<String>(
-                      value: selectedRoute,
-                      hint: const Text('Selecciona tu ruta'),
-                      isExpanded: true,
-                      onChanged: (String? newValue) {
-                        setModalState(() {
-                          selectedRoute = newValue;
-                        });
-                      },
-                      items: _rutasDisponibles.map<DropdownMenuItem<String>>((
-                        String value,
-                      ) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.route),
-                      ),
-                    ),
+                    _isFetchingRutas
+                        ? const Center(child: CircularProgressIndicator())
+                        : DropdownButtonFormField<String>(
+                            value: selectedRoute,
+                            hint: const Text('Selecciona tu ruta'),
+                            isExpanded: true,
+                            onChanged: (String? newValue) {
+                              setModalState(() {
+                                selectedRoute = newValue;
+                              });
+                            },
+                            items: _rutasDisponibles
+                                .map<DropdownMenuItem<String>>((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(value),
+                                  );
+                                })
+                                .toList(),
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              prefixIcon: const Icon(Icons.route),
+                            ),
+                          ),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -238,13 +280,10 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                             ? () {
                                 // Lógica para iniciar el tracking
                                 Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Iniciando seguimiento en la ruta: $selectedRoute',
-                                    ),
-                                  ),
-                                );
+                                setState(() {
+                                  _isInBusMode = true;
+                                  _currentBusRoute = selectedRoute;
+                                });
                               }
                             : null, // Deshabilitado si no hay ruta
                         style: ElevatedButton.styleFrom(
@@ -413,7 +452,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       debugPrint('--------------------');
 
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/bus/calculate_route'),
+        Uri.parse('$apiBaseUrl/api/ruta/calculate_route'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
@@ -478,56 +517,257 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: !showRouteResult,
-      body: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: [
-            if (!showRouteResult) _buildSearchView() else _buildResultView(),
-            if (_isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.3),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Colors.blue),
-                      const SizedBox(height: 16),
-                      Text(
-                        _loadingMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+      extendBody: true, // Permite que el cuerpo se extienda detrás de la barra
+      body: Stack(
+        children: [
+          // CAPA 1: El mapa siempre está de fondo
+          _buildMapView(),
+
+          // CAPA 2: Contenido que cambia según el estado
+          SafeArea(
+            bottom: false,
+            child: _isInBusMode
+                ? _buildInBusModeOverlay()
+                : showRouteResult
+                ? _buildResultView()
+                : _buildSearchView(),
+          ),
+
+          // CAPA 3: El indicador de carga siempre va encima de todo
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.blue),
+                    const SizedBox(height: 16),
+                    Text(
+                      _loadingMessage,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
-      bottomNavigationBar: showRouteResult
-          ? _buildSolidNavBar()
-          : _buildFloatingNavBar(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showBusTrackingModal,
-        label: const Text('Estoy en el Bus'),
-        icon: const Icon(Icons.directions_bus),
-        backgroundColor: Colors.blue,
-      ),
+      bottomNavigationBar: _buildBottomBar(),
+      floatingActionButton: _buildFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
+  // Widget para construir la barra de navegación inferior dinámicamente
+  Widget? _buildBottomBar() {
+    if (showRouteResult && !_isInBusMode) return _buildSolidNavBar();
+    return _buildFloatingNavBar();
+  }
+
+  // Widget para construir el FAB dinámicamente
+  Widget? _buildFab() {
+    if (_isInBusMode || showRouteResult) return null;
+
+    return FloatingActionButton.extended(
+      onPressed: _showBusTrackingModal,
+      label: const Text('Estoy en el Bus'),
+      icon: const Icon(Icons.directions_bus),
+      backgroundColor: Colors.blue,
+    );
+  }
+
+  Widget _buildInBusModeOverlay() {
+    return Stack(
+      children: [
+        // Panel superior
+        Positioned(
+          top: 10,
+          left: 20,
+          right: 20,
+          child: _buildGlassmorphismContainer(
+            color: Colors.lightBlue.shade300,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Viajando en ruta',
+                        style: TextStyle(fontSize: 16, color: Colors.white70),
+                      ),
+                      Text(
+                        _currentBusRoute ?? 'Desconocida',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Elementos inferiores
+        Positioned(
+          bottom:
+              140, // Elevado para no superponerse con la barra de navegación
+          left: 20,
+          right: 20,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Panel de velocidad
+              _buildGlassmorphismContainer(
+                color: Colors.lightBlue.shade300,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.speed_outlined,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '42', // Velocidad de ejemplo
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'km/h',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => _showEndTripConfirmationDialog(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade400,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                ),
+                child: const Text('Finalizar'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showEndTripConfirmationDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true, // user can tap outside to dismiss
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[850],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16.0),
+          ),
+          title: const Text(
+            'Finalizar Viaje',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: const SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(
+                  '¿Estás seguro de que deseas finalizar el viaje?',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Dismiss the dialog
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.white70),
+              child: const Text('No'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Dismiss the dialog
+                setState(() {
+                  _isInBusMode = false;
+                  resetToSearch();
+                });
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red.shade400,
+                backgroundColor: Colors.red.shade400.withOpacity(0.1),
+              ),
+              child: const Text('Sí, Finalizar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper para crear los contenedores con efecto de vidrio
+  Widget _buildGlassmorphismContainer({required Widget child, Color? color}) {
+    final bgColor = color ?? Colors.white;
+    final isBlue = color != null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+          decoration: BoxDecoration(
+            color: bgColor.withOpacity(isBlue ? 0.4 : 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _buildFloatingNavBar() {
+    // Determinar el estilo basado en el modo actual
+    final bool isBusMode = _isInBusMode;
+    final Color navBarColor = isBusMode
+        ? Colors.lightBlue.shade300.withOpacity(0.4)
+        : Colors.white.withOpacity(0.8);
+    final Color selectedColor = isBusMode ? Colors.white : Colors.blue.shade700;
+    final Color unselectedColor = isBusMode ? Colors.white70 : Colors.black54;
+
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(12.0),
         margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
+          color: navBarColor,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
@@ -539,8 +779,8 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               type: BottomNavigationBarType.fixed,
-              selectedItemColor: Colors.black,
-              unselectedItemColor: Colors.black87,
+              selectedItemColor: selectedColor,
+              unselectedItemColor: unselectedColor,
               showUnselectedLabels: true,
               items: const [
                 BottomNavigationBarItem(
@@ -587,10 +827,10 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
 
   Widget _buildSolidNavBar() {
     return BottomNavigationBar(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.lightBlue.shade300,
       elevation: 8,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: Colors.black,
+      selectedItemColor: Colors.white,
       unselectedItemColor: Colors.black87,
       showUnselectedLabels: true,
       items: const [
@@ -624,206 +864,202 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
     );
   }
 
-  Widget _buildSearchView() {
-    // Usamos un Stack para superponer la UI de búsqueda sobre el mapa.
-    return Stack(
+  Widget _buildMapView() {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(center: _mapCenter, zoom: 15.0),
       children: [
-        // CAPA 1: El mapa ocupa todo el fondo.
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(center: _mapCenter, zoom: 15.0),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.app',
-            ),
-            MarkerLayer(
-              markers: [
-                if (_latitude != null && _longitude != null)
-                  Marker(
-                    point: LatLng(_latitude!, _longitude!),
-                    width: 40,
-                    height: 40,
-                    child: _buildLocationMarker(),
-                  ),
-                if (_endLatitude != null && _endLongitude != null)
-                  Marker(
-                    point: LatLng(_endLatitude!, _endLongitude!),
-                    width: 40,
-                    height: 40,
-                    child: _buildLocationMarker(isDestination: true),
-                  ),
-              ],
-            ),
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.app',
+        ),
+        MarkerLayer(
+          markers: [
+            if (_latitude != null && _longitude != null)
+              Marker(
+                point: LatLng(_latitude!, _longitude!),
+                width: 40,
+                height: 40,
+                child: _buildLocationMarker(),
+              ),
+            if (_endLatitude != null && _endLongitude != null)
+              Marker(
+                point: LatLng(_endLatitude!, _endLongitude!),
+                width: 40,
+                height: 40,
+                child: _buildLocationMarker(isDestination: true),
+              ),
           ],
         ),
+      ],
+    );
+  }
 
-        // CAPA 2: La UI de búsqueda flota encima del mapa.
-        SingleChildScrollView(
-          child: Column(
-            children: [
-              // Contenedor para la sombra y el margen
-              Container(
-                margin: const EdgeInsets.only(top: 40, left: 20, right: 20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
+  Widget _buildSearchView() {
+    // La UI de búsqueda flota encima del mapa.
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Contenedor para la sombra y el margen
+          Container(
+            margin: const EdgeInsets.only(top: 40, left: 20, right: 20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 15,
+                  spreadRadius: 2,
                 ),
-                // ClipRRect para que el desenfoque respete los bordes redondeados
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                    child: Container(
-                      padding: const EdgeInsets.all(24.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(20),
+              ],
+            ),
+            // ClipRRect para que el desenfoque respete los bordes redondeados
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.all(24.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'UrbanTrack',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 8),
+                      const Text(
+                        '¿A dónde vamos?',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
                         children: [
-                          const Text(
-                            'UrbanTrack',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            '¿A dónde vamos?',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _startController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Ubicación de inicio',
-                                    prefixIcon: Icon(
-                                      Icons.my_location,
-                                      color: Colors.blue,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.8),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
+                          Expanded(
+                            child: TextField(
+                              controller: _startController,
+                              decoration: InputDecoration(
+                                hintText: 'Ubicación de inicio',
+                                prefixIcon: Icon(
+                                  Icons.my_location,
                                   color: Colors.blue,
+                                ),
+                                border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
                                 ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.gps_fixed,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _getCurrentLocation,
-                                ),
+                                filled: true,
+                                fillColor: Colors.white.withOpacity(0.8),
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _endController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Destino',
-                                    prefixIcon: Icon(
-                                      Icons.location_on,
-                                      color: Colors.green,
-                                    ),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.8),
-                                  ),
-                                  onChanged: _searchLocations,
-                                ),
+                          const SizedBox(width: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.gps_fixed,
+                                color: Colors.white,
                               ),
-                              const SizedBox(width: 12),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.green,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.search,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _isLoading ? null : calculateRoute,
-                                ),
-                              ),
-                            ],
+                              onPressed: _getCurrentLocation,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Las sugerencias aparecen debajo de la tarjeta
-              if (_showSuggestions && _suggestions.isNotEmpty)
-                Container(
-                  height: 150,
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _endController,
+                              decoration: InputDecoration(
+                                hintText: 'Destino',
+                                prefixIcon: Icon(
+                                  Icons.location_on,
+                                  color: Colors.green,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                                filled: true,
+                                fillColor: Colors.white.withOpacity(0.8),
+                              ),
+                              onChanged: _searchLocations,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.search,
+                                color: Colors.white,
+                              ),
+                              onPressed: _isLoading ? null : calculateRoute,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    itemCount: _suggestions.length,
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        title: Text(_locationNames[index]),
-                        onTap: () => _selectLocation(
-                          _suggestions[index],
-                          _locationNames[index],
-                        ),
-                      );
-                    },
-                  ),
                 ),
-            ],
+              ),
+            ),
           ),
-        ),
-      ],
+
+          // Las sugerencias aparecen debajo de la tarjeta
+          if (_showSuggestions && _suggestions.isNotEmpty)
+            Container(
+              height: 150,
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _suggestions.length,
+                itemBuilder: (context, index) {
+                  return ListTile(
+                    title: Text(_locationNames[index]),
+                    onTap: () => _selectLocation(
+                      _suggestions[index],
+                      _locationNames[index],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1144,8 +1380,7 @@ class RouteTimeline extends StatelessWidget {
   final List<Map<String, dynamic>> segments;
   final Function(LatLng)? onStopTap;
 
-  const RouteTimeline({Key? key, required this.segments, this.onStopTap})
-    : super(key: key);
+  const RouteTimeline({super.key, required this.segments, this.onStopTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1182,7 +1417,7 @@ class RouteStepItem extends StatelessWidget {
   final VoidCallback? onTap;
 
   const RouteStepItem({
-    Key? key,
+    super.key,
     required this.description,
     this.rutaNombre,
     required this.color,
@@ -1190,7 +1425,7 @@ class RouteStepItem extends StatelessWidget {
     this.isFirst = false,
     this.isLast = false,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

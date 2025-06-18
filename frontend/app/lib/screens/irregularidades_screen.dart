@@ -15,7 +15,7 @@ import 'package:provider/provider.dart';
 import '../main.dart';
 
 class IrregularidadesScreen extends StatefulWidget {
-  const IrregularidadesScreen({Key? key}) : super(key: key);
+  const IrregularidadesScreen({super.key});
 
   @override
   State<IrregularidadesScreen> createState() => _IrregularidadesScreenState();
@@ -44,6 +44,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
   OverlayEntry? _infoWindowOverlay;
   dynamic _selectedIrregularity;
   final LayerLink _markerLink = LayerLink();
+  StreamSubscription? _mapEventSubscription;
 
   // State for active irregularities
   List<dynamic> _irregularities = [];
@@ -54,7 +55,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
     _fetchIrregularities();
 
     // Listener to reposition the info window when the map moves
-    _mapController.mapEventStream.listen((_) {
+    _mapEventSubscription = _mapController.mapEventStream.listen((_) {
       if (_infoWindowOverlay != null) {
         _removeInfoWindow();
       }
@@ -72,11 +73,12 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
 
   @override
   void dispose() {
+    _mapEventSubscription?.cancel();
     _locationController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
     _locationFocusNode.dispose();
-    _removeInfoWindow();
+    _infoWindowOverlay?.remove();
     super.dispose();
   }
 
@@ -616,7 +618,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/api/irregularities/$irregularityId'),
+        Uri.parse('$apiBaseUrl/api/irregularities/search/$irregularityId'),
       );
 
       if (response.statusCode == 200) {
@@ -653,7 +655,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
             mapController: _mapController,
             options: const MapOptions(
               initialCenter: LatLng(10.3910, -75.4794), // Cartagena
-              initialZoom: 13.0,
+              initialZoom: 14.5,
             ),
             children: [
               TileLayer(

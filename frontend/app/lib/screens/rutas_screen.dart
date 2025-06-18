@@ -7,7 +7,7 @@ import 'package:app/screens/irregularidades_screen.dart';
 import '../main.dart';
 
 class RutasScreen extends StatefulWidget {
-  const RutasScreen({Key? key}) : super(key: key);
+  const RutasScreen({super.key});
 
   @override
   State<RutasScreen> createState() => _RutasScreenState();
@@ -28,7 +28,7 @@ class _RutasScreenState extends State<RutasScreen> {
 
   Future<void> _fetchRutas() async {
     try {
-      final response = await http.get(Uri.parse('$apiBaseUrl/api/bus/rutas'));
+      final response = await http.get(Uri.parse('$apiBaseUrl/api/ruta/rutas'));
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
 
