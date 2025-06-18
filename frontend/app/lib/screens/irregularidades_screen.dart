@@ -958,21 +958,14 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
               currentIndex: 3,
               onTap: (index) {
                 if (index == 0) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  Navigator.popUntil(
+                    context,
+                    ModalRoute.withName('/direcciones'),
+                  );
                 } else if (index == 1) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const EstacionesScreen(),
-                    ),
-                  );
+                  Navigator.pushReplacementNamed(context, '/estaciones');
                 } else if (index == 2) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RutasScreen(),
-                    ),
-                  );
+                  Navigator.pushReplacementNamed(context, '/rutas');
                 }
               },
             ),

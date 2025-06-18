@@ -81,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
             headers: {'Authorization': 'Bearer $token'},
           );
 
-          if (userResponse.statusCode == 200) {
+          if (userResponse.statusCode == 200 && mounted) {
             final userBody = jsonDecode(utf8.decode(userResponse.bodyBytes));
             final user = User.fromJson(userBody);
 
@@ -91,14 +91,13 @@ class _LoginScreenState extends State<LoginScreen> {
               listen: false,
             ).setAuth(token, user);
 
-            Navigator.pushReplacement(
+            // Usar navegación por nombre para ir a la pantalla principal
+            Navigator.pushNamedAndRemoveUntil(
               context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    DireccionesScreen(initialPosition: _userPosition),
-              ),
+              '/direcciones',
+              (route) => false,
             );
-          } else {
+          } else if (mounted) {
             // Manejar error si no se pueden obtener los datos del usuario
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

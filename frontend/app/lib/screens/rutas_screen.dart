@@ -334,21 +334,14 @@ class _RutasScreenState extends State<RutasScreen> {
               currentIndex: 2,
               onTap: (index) {
                 if (index == 0) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  Navigator.popUntil(
+                    context,
+                    ModalRoute.withName('/direcciones'),
+                  );
                 } else if (index == 1) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const EstacionesScreen(),
-                    ),
-                  );
+                  Navigator.pushReplacementNamed(context, '/estaciones');
                 } else if (index == 3) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const IrregularidadesScreen(),
-                    ),
-                  );
+                  Navigator.pushReplacementNamed(context, '/irregularidades');
                 }
               },
             ),

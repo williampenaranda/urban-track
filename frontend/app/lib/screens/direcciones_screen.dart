@@ -1139,26 +1139,11 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
               currentIndex: 0,
               onTap: (index) {
                 if (index == 1) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const EstacionesScreen(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/estaciones');
                 } else if (index == 2) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RutasScreen(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/rutas');
                 } else if (index == 3) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const IrregularidadesScreen(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/irregularidades');
                 }
               },
             ),
