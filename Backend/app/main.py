@@ -19,6 +19,7 @@ from app.rutas.tracking import router as tracking_router
 from app.rutas.route_planning import router as route_planning_router # Asumiendo el nuevo nombre del archivo
 from app.irregularities.routes import router as irregularities_router # Importa el router de irregularidades
 from app.auth import routes as auth_routes
+from app.rutas.paradas import router as paradas_router
 
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app.include_router(auth_routes.router, prefix="/api/auth", tags=["Autenticación
 app.include_router(tracking_router, prefix="/api/tracking", tags=["Tracking"])
 app.include_router(irregularities_router, prefix="/api/irregularities", tags=["Irregularidades"])
 app.include_router(route_planning_router, prefix="/api/ruta", tags=["Rutas"])
+app.include_router(paradas_router, prefix="/api/paradas", tags=["Paradas"])
 
 
 # --- EVENTOS DE INICIO/APAGADO PARA CLUSTERING SERVICE (Añadir) ---

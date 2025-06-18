@@ -302,3 +302,21 @@ class BusLocationResponse(BaseModel):
 
     class Config:
         from_attributes = True # O `orm_mode = True` si usas Pydantic v1.x
+
+class RutaEnParadaResponse(BaseModel):
+    id: int
+    nombre: str
+
+    class Config:
+        from_attributes = True # Para Pydantic v2+
+
+class ParadaDetalleResponse(BaseModel):
+    id: int
+    nombre: str
+    latitude: float
+    longitude: float
+    
+    rutas: List[RutaEnParadaResponse]
+
+    class Config:
+        from_attributes = True # Para Pydantic v2+

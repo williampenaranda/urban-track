@@ -66,9 +66,7 @@ class ClusteringService:
             await asyncio.sleep(5) # Procesa cada 5 segundos (ajustable)
 
     async def _process_updates(self):
-        # Este print es para depuración y confirma que el ciclo se ejecuta
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ClusteringService: Procesando ciclo...")
-
+        
         if not self.user_locations_queue:
             # print("No hay actualizaciones de ubicación en la cola. Saltando el procesamiento.") # Puedes activar esto para depuración
             return
