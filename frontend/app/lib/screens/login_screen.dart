@@ -75,21 +75,37 @@ class _LoginScreenState extends State<LoginScreen> {
           final responseBody = jsonDecode(utf8.decode(response.bodyBytes));
           final token = responseBody['access_token'];
 
-          // Save token to AuthProvider
-          Provider.of<AuthProvider>(context, listen: false).setToken(token);
-
-          // For debugging, you can still print it
-          debugPrint('--- AUTHENTICATION TOKEN (SAVED) ---');
-          debugPrint(token ?? 'No token found');
-          debugPrint('----------------------------------');
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  DireccionesScreen(initialPosition: _userPosition),
-            ),
+          // Ahora, obtén los datos del usuario
+          final userResponse = await http.get(
+            Uri.parse('$apiBaseUrl/api/auth/me'),
+            headers: {'Authorization': 'Bearer $token'},
           );
+
+          if (userResponse.statusCode == 200) {
+            final userBody = jsonDecode(utf8.decode(userResponse.bodyBytes));
+            final user = User.fromJson(userBody);
+
+            // Guardar token y usuario en AuthProvider
+            Provider.of<AuthProvider>(
+              context,
+              listen: false,
+            ).setAuth(token, user);
+
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    DireccionesScreen(initialPosition: _userPosition),
+              ),
+            );
+          } else {
+            // Manejar error si no se pueden obtener los datos del usuario
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No se pudieron obtener los datos del usuario.'),
+              ),
+            );
+          }
         }
       } else {
         if (mounted) {

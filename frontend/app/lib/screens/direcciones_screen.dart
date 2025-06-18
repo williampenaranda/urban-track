@@ -5,11 +5,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:ui'; // Necesario para ImageFilter
 import 'package:app/screens/rutas_screen.dart';
 import 'package:app/screens/irregularidades_screen.dart';
+import 'package:app/screens/modo_viaje_screen.dart';
+import 'package:provider/provider.dart';
 import '../main.dart';
+import 'package:app/providers/auth_provider.dart';
+import 'estaciones_screen.dart';
 
 class DireccionesScreen extends StatefulWidget {
   final Position? initialPosition;
@@ -38,9 +41,14 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   bool _isInBusMode = false;
   String? _currentBusRoute;
   bool _isFetchingRutas = false;
+  bool _trackingSessionStarted = false;
+
+  // Nuevas variables de estado para la ruta dibujada en el mapa
+  List<Polyline> _routePolylines = [];
+  List<Marker> _routeStopMarkers = [];
 
   // Se convierte en una variable de estado que se llenará desde la API.
-  List<String> _rutasDisponibles = [];
+  List<Map<String, dynamic>> _rutasDisponibles = [];
 
   Widget _buildLocationMarker({bool isDestination = false}) {
     return Container(
@@ -95,11 +103,11 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
-        final List<String> nombresRutas = data
-            .map((ruta) => ruta['nombre'] as String)
-            .toList();
+        // Guardar la lista completa de rutas (objetos con id y nombre)
+        final List<Map<String, dynamic>> rutas =
+            List<Map<String, dynamic>>.from(data);
         setState(() {
-          _rutasDisponibles = nombresRutas;
+          _rutasDisponibles = rutas;
         });
       } else {
         // Manejar el error, tal vez mostrando un SnackBar.
@@ -258,14 +266,16 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                                 selectedRoute = newValue;
                               });
                             },
-                            items: _rutasDisponibles
-                                .map<DropdownMenuItem<String>>((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
-                                  );
-                                })
-                                .toList(),
+                            items: _rutasDisponibles.map<DropdownMenuItem<String>>((
+                              Map<String, dynamic> ruta,
+                            ) {
+                              return DropdownMenuItem<String>(
+                                value:
+                                    ruta['nombre']
+                                        as String, // El valor sigue siendo el nombre
+                                child: Text(ruta['nombre'] as String),
+                              );
+                            }).toList(),
                             decoration: InputDecoration(
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -277,13 +287,116 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: selectedRoute != null
-                            ? () {
-                                // Lógica para iniciar el tracking
-                                Navigator.pop(context);
+                            ? () async {
+                                // Capturamos el Navigator y el ScaffoldMessenger ANTES de cualquier operación asíncrona
+                                // o de cerrar el modal.
+                                final navigator = Navigator.of(context);
+                                final scaffoldMessenger = ScaffoldMessenger.of(
+                                  context,
+                                );
+
+                                final auth = Provider.of<AuthProvider>(
+                                  context,
+                                  listen: false,
+                                );
+                                final user = auth.user;
+                                final token = auth.token;
+
+                                if (user == null || token == null) {
+                                  navigator
+                                      .pop(); // Usamos la referencia capturada
+                                  scaffoldMessenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Error de autenticación. Vuelva a iniciar sesión.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                final routeData = _rutasDisponibles.firstWhere(
+                                  (ruta) => ruta['nombre'] == selectedRoute,
+                                  orElse: () => {},
+                                );
+                                final routeId = routeData['id'];
+
+                                if (routeId == null) {
+                                  navigator
+                                      .pop(); // Usamos la referencia capturada
+                                  scaffoldMessenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'No se pudo encontrar el ID de la ruta seleccionada.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // Cerrar el modal antes de la operación asíncrona
+                                navigator.pop();
+
                                 setState(() {
-                                  _isInBusMode = true;
-                                  _currentBusRoute = selectedRoute;
+                                  _isLoading = true;
+                                  _loadingMessage = 'Iniciando modo viaje...';
                                 });
+
+                                try {
+                                  final response = await http.post(
+                                    Uri.parse(
+                                      '$apiBaseUrl/api/tracking/set-on-bus',
+                                    ),
+                                    headers: {
+                                      'Content-Type':
+                                          'application/json; charset=UTF-8',
+                                      'Authorization': 'Bearer $token',
+                                    },
+                                    body: jsonEncode({
+                                      'user_id': user.id,
+                                      'reported_route_id': routeId,
+                                    }),
+                                  );
+
+                                  if (mounted) {
+                                    if (response.statusCode == 200) {
+                                      // Usamos la referencia capturada para navegar
+                                      navigator.push(
+                                        MaterialPageRoute(
+                                          builder: (context) => ModoViajeScreen(
+                                            rutaSeleccionada: selectedRoute!,
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      final errorBody = jsonDecode(
+                                        utf8.decode(response.bodyBytes),
+                                      );
+                                      // Usamos la referencia capturada para mostrar el error
+                                      scaffoldMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Error: ${errorBody['detail']}',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    scaffoldMessenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Error de red: ${e.toString()}',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _isLoading = false);
+                                  }
+                                }
                               }
                             : null, // Deshabilitado si no hay ruta
                         style: ElevatedButton.styleFrom(
@@ -446,45 +559,100 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
         'destino_lon': _endLongitude,
       };
 
-      // 1. Imprimir el cuerpo de la solicitud en la consola de depuración
-      debugPrint('--- REQUEST BODY ---');
-      debugPrint(jsonEncode(requestBody));
-      debugPrint('--------------------');
-
       final response = await http.post(
         Uri.parse('$apiBaseUrl/api/ruta/calculate_route'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
 
-      // 2. Imprimir la respuesta completa de la API
-      debugPrint('--- API RESPONSE ---');
-      debugPrint('Status Code: ${response.statusCode}');
-      debugPrint('Body: ${response.body}');
-      debugPrint('--------------------');
-
-      // Independientemente del código de estado, intentamos decodificar el cuerpo
-      // por si contiene un mensaje de error útil.
       final responseData = jsonDecode(response.body);
 
-      // Una ruta es válida solo si el estado es 200 y contiene paradas.
       if (response.statusCode == 200 &&
           responseData.containsKey('paradas_trayecto') &&
           (responseData['paradas_trayecto'] as List).isNotEmpty) {
+        // --- PROCESAMIENTO DE LA RUTA PARA EL MAPA ---
+        final List<dynamic> paradas = responseData['paradas_trayecto'];
+        final Map<String, List<LatLng>> routeSegments = {};
+        final Map<String, Color> routeColors = {};
+        final List<Marker> stopMarkers = [];
+        final List<LatLng> allPointsForBounds = [
+          LatLng(_latitude!, _longitude!),
+          LatLng(_endLatitude!, _endLongitude!),
+        ];
+
+        final List<Color> colors = [
+          Colors.blue.shade700,
+          Colors.green.shade600,
+          Colors.purple.shade600,
+        ];
+        int colorIndex = 0;
+
+        for (var parada in paradas) {
+          final String rutaNombre = parada['ruta_nombre'] ?? 'Ruta Desconocida';
+          if (!routeSegments.containsKey(rutaNombre)) {
+            routeSegments[rutaNombre] = [];
+            routeColors[rutaNombre] = colors[colorIndex % colors.length];
+            colorIndex++;
+          }
+          final lat = parada['latitude'];
+          final lon = parada['longitude'];
+          if (lat != null && lon != null) {
+            final point = LatLng(lat, lon);
+            routeSegments[rutaNombre]!.add(point);
+            allPointsForBounds.add(point);
+            stopMarkers.add(
+              Marker(
+                point: point,
+                width: 20,
+                height: 20,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: routeColors[rutaNombre]!,
+                      width: 4,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
+        final List<Polyline> polylines = routeSegments.entries.map((entry) {
+          return Polyline(
+            points: entry.value,
+            strokeWidth: 5.0,
+            color: routeColors[entry.key]!,
+          );
+        }).toList();
+
+        final LatLngBounds bounds = LatLngBounds.fromPoints(allPointsForBounds);
+        // --- FIN DEL PROCESAMIENTO ---
+
         setState(() {
           showRouteResult = true;
           routeResult = responseData;
+          _routePolylines = polylines;
+          _routeStopMarkers = stopMarkers;
         });
+
+        // Mover el mapa para que se ajuste a la ruta
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _mapController.fitCamera(
+            CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
+          );
+        });
+
+        _startTrackingSession();
       } else {
-        // Para cualquier otro caso (error 500, 404, o 200 sin paradas),
-        // mostramos la vista de "ruta no encontrada".
         setState(() {
           showRouteResult = true;
           routeResult = null;
         });
       }
     } catch (e) {
-      // Esto captura errores de red o si el cuerpo de la respuesta no es un JSON válido.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -511,7 +679,175 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       _suggestions = [];
       _locationNames = [];
       _showSuggestions = false;
+      _trackingSessionStarted = false; // Reiniciar al buscar otra ruta
+      // Limpiar las capas del mapa
+      _routePolylines = [];
+      _routeStopMarkers = [];
     });
+  }
+
+  Future<void> _startTrackingSession() async {
+    if (_trackingSessionStarted) return;
+
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.user;
+    final token = auth.token;
+
+    if (user == null || token == null) {
+      print("startTrackingSession: El usuario no está autenticado. Abortando.");
+      return;
+    }
+
+    final firstRouteName =
+        routeResult?['paradas_trayecto']?.first?['ruta_nombre'] as String?;
+
+    if (firstRouteName == null) {
+      print(
+        "startTrackingSession: No se pudo extraer 'ruta_nombre' del resultado del cálculo de ruta.",
+      );
+      return;
+    }
+
+    print(
+      "startTrackingSession: Buscando ID para la ruta '$firstRouteName'...",
+    );
+
+    Map<String, dynamic>? routeData;
+    try {
+      routeData = _rutasDisponibles.firstWhere(
+        (ruta) => ruta['nombre'] == firstRouteName,
+      );
+    } catch (e) {
+      routeData = null;
+      print(
+        "startTrackingSession: Ocurrió un error al buscar la ruta en la lista: $e",
+      );
+    }
+
+    if (routeData == null) {
+      print(
+        "startTrackingSession: No se encontró la ruta '$firstRouteName' en la lista de rutas precargadas (_rutasDisponibles).",
+      );
+      return;
+    }
+
+    final routeId = routeData['id'];
+
+    if (routeId == null) {
+      print(
+        "startTrackingSession: La ruta '$firstRouteName' se encontró, pero no tiene un 'id'.",
+      );
+      return;
+    }
+
+    print(
+      "startTrackingSession: Ruta encontrada. ID: $routeId. Realizando la llamada a la API...",
+    );
+
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/api/tracking/start-session'),
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'user_id': user.id, 'selected_route_id': routeId}),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+          'startTrackingSession: ÉXITO. Sesión de seguimiento iniciada para la ruta $routeId.',
+        );
+        if (mounted) {
+          // Usamos un Post-Frame Callback para actualizar el estado DESPUÉS
+          // de que el build actual se complete, evitando así la excepción.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() => _trackingSessionStarted = true);
+            }
+          });
+        }
+      } else {
+        print(
+          'startTrackingSession: FALLO. El servidor respondió con ${response.statusCode}. Body: ${response.body}',
+        );
+      }
+    } catch (e) {
+      print("startTrackingSession: Excepción al realizar la llamada HTTP: $e");
+    }
+  }
+
+  Future<void> _setUserOnBus() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.user;
+    final token = auth.token;
+    final firstRouteName =
+        routeResult?['paradas_trayecto']?.first?['ruta_nombre'] as String?;
+
+    if (user == null || token == null || firstRouteName == null) return;
+
+    Map<String, dynamic>? routeData;
+    try {
+      routeData = _rutasDisponibles.firstWhere(
+        (ruta) => ruta['nombre'] == firstRouteName,
+      );
+    } catch (e) {
+      routeData = null;
+    }
+
+    if (routeData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudieron encontrar los detalles de la ruta $firstRouteName.',
+          ),
+        ),
+      );
+      return;
+    }
+    final routeId = routeData['id'];
+    if (routeId == null) return;
+
+    setState(() {
+      _isLoading = true;
+      _loadingMessage = 'Confirmando que estás a bordo...';
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/api/tracking/set-on-bus'),
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'user_id': user.id, 'reported_route_id': routeId}),
+      );
+
+      if (mounted) {
+        if (response.statusCode == 200) {
+          // Navegamos a la pantalla de modo viaje.
+          // En un futuro, aquí es donde se conectaría el WebSocket.
+          setState(() {
+            _isInBusMode = true;
+            _currentBusRoute = firstRouteName;
+          });
+        } else {
+          final errorBody = jsonDecode(utf8.decode(response.bodyBytes));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al confirmar: ${errorBody['detail']}'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error de red: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -802,7 +1138,14 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
               ],
               currentIndex: 0,
               onTap: (index) {
-                if (index == 2) {
+                if (index == 1) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const EstacionesScreen(),
+                    ),
+                  );
+                } else if (index == 2) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -867,14 +1210,18 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
   Widget _buildMapView() {
     return FlutterMap(
       mapController: _mapController,
-      options: MapOptions(center: _mapCenter, zoom: 15.0),
+      options: MapOptions(initialCenter: _mapCenter, initialZoom: 15.0),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.app',
         ),
+        // Dibuja las polilíneas de la ruta si existen
+        if (_routePolylines.isNotEmpty)
+          PolylineLayer(polylines: _routePolylines),
         MarkerLayer(
           markers: [
+            // Marcador de Origen
             if (_latitude != null && _longitude != null)
               Marker(
                 point: LatLng(_latitude!, _longitude!),
@@ -882,6 +1229,7 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                 height: 40,
                 child: _buildLocationMarker(),
               ),
+            // Marcador de Destino
             if (_endLatitude != null && _endLongitude != null)
               Marker(
                 point: LatLng(_endLatitude!, _endLongitude!),
@@ -889,6 +1237,8 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
                 height: 40,
                 child: _buildLocationMarker(isDestination: true),
               ),
+            // Dibuja los marcadores de las paradas de la ruta si existen
+            ..._routeStopMarkers,
           ],
         ),
       ],
@@ -1153,81 +1503,23 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       );
     }
 
-    // Caso 2: Se encontró una ruta, construir la vista de resultados
+    // --- PROCESAMIENTO PARA LA LÍNEA DE TIEMPO ---
     final List<dynamic> paradas = routeResult!['paradas_trayecto'];
-    final Map<String, List<LatLng>> routeSegments = {};
     final Map<String, Color> routeColors = {};
-    final List<Marker> stopMarkers = [];
-    final List<LatLng> allPointsForBounds = [];
-
-    // Paleta de colores para las rutas
     final List<Color> colors = [
       Colors.blue.shade700,
       Colors.green.shade600,
       Colors.purple.shade600,
-      Colors.orange.shade800,
-      Colors.teal.shade500,
-      Colors.red.shade600,
     ];
     int colorIndex = 0;
-
-    // Agregar punto de origen a los límites del mapa
-    if (_latitude != null && _longitude != null) {
-      allPointsForBounds.add(LatLng(_latitude!, _longitude!));
-    }
-
-    // Procesar paradas para agrupar por ruta, asignar colores y crear marcadores
     for (var parada in paradas) {
       final String rutaNombre = parada['ruta_nombre'] ?? 'Ruta Desconocida';
-      if (!routeSegments.containsKey(rutaNombre)) {
-        routeSegments[rutaNombre] = [];
+      if (!routeColors.containsKey(rutaNombre)) {
         routeColors[rutaNombre] = colors[colorIndex % colors.length];
         colorIndex++;
       }
-
-      final lat = parada['latitude'];
-      final lon = parada['longitude'];
-      if (lat != null && lon != null) {
-        final point = LatLng(lat, lon);
-        routeSegments[rutaNombre]!.add(point);
-        allPointsForBounds.add(point);
-        stopMarkers.add(
-          Marker(
-            point: point,
-            width: 20,
-            height: 20,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: routeColors[rutaNombre]!, width: 4),
-              ),
-            ),
-          ),
-        );
-      }
     }
 
-    // Agregar punto de destino a los límites del mapa
-    if (_endLatitude != null && _endLongitude != null) {
-      allPointsForBounds.add(LatLng(_endLatitude!, _endLongitude!));
-    }
-
-    // Construir las polilíneas para el mapa
-    final List<Polyline> polylines = routeSegments.entries.map((entry) {
-      return Polyline(
-        points: entry.value,
-        strokeWidth: 5.0,
-        color: routeColors[entry.key]!,
-      );
-    }).toList();
-
-    // Construir los límites del mapa a partir de todos los puntos.
-    final LatLngBounds? bounds = allPointsForBounds.isNotEmpty
-        ? LatLngBounds.fromPoints(allPointsForBounds)
-        : null;
-
-    // Construir los segmentos para la línea de tiempo
     final List<Map<String, dynamic>> segments = [];
     final double distOrigen =
         routeResult!['distancia_origen_primera_parada_metros'] ?? 0.0;
@@ -1249,7 +1541,6 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
       if (lat != null && lon != null) {
         point = LatLng(lat, lon);
       }
-
       segments.add({
         'tipo': 'bus_stop',
         'descripcion': parada['nombre'] ?? 'Parada sin nombre',
@@ -1265,112 +1556,118 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
           'Desde "${paradas.last['nombre']}", camina ${distDestino.toStringAsFixed(0)}m hasta tu destino.',
       'color': Colors.grey.shade600,
     });
+    // --- FIN DEL PROCESAMIENTO DE LÍNEA DE TIEMPO ---
 
-    return Column(
-      children: [
-        // 1. Mapa
-        SizedBox(
-          height: MediaQuery.of(context).size.height * 0.4,
-          width: double.infinity,
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCameraFit: bounds != null
-                  ? CameraFit.bounds(
-                      bounds: bounds,
-                      padding: const EdgeInsets.all(30),
-                    )
-                  : null,
-              initialCenter: _mapCenter,
-              initialZoom: 14,
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.2,
+      maxChildSize: 0.8,
+      builder: (BuildContext context, ScrollController scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
-              ),
-              PolylineLayer(polylines: polylines),
-              MarkerLayer(
-                markers: [
-                  // Marcador de Origen
-                  if (_latitude != null && _longitude != null)
-                    Marker(
-                      point: LatLng(_latitude!, _longitude!),
-                      width: 40,
-                      height: 40,
-                      child: _buildLocationMarker(),
-                    ),
-                  // Marcador de Destino
-                  if (_endLatitude != null && _endLongitude != null)
-                    Marker(
-                      point: LatLng(_endLatitude!, _endLongitude!),
-                      width: 40,
-                      height: 40,
-                      child: _buildLocationMarker(isDestination: true),
-                    ),
-                  // Marcadores de Paradas
-                  ...stopMarkers,
-                ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                spreadRadius: 5,
               ),
             ],
           ),
-        ),
-        // 2. Zona de información con el contenido de la ruta
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(24),
-                topRight: Radius.circular(24),
+          child: Column(
+            children: [
+              // "Handle" para indicar que es deslizable
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Container(
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  spreadRadius: 5,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Tu Ruta Sugerida',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: resetToSearch,
+                      icon: const Icon(Icons.arrow_back, size: 18),
+                      label: const Text('Otra ruta'),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Tu Ruta Sugerida',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    RouteTimeline(
+                      controller: scrollController, // Usar el scroll controller
+                      segments: segments,
+                      onStopTap: (point) {
+                        _mapController.move(point, 17.0);
+                      },
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white.withOpacity(0.0),
+                              Colors.white.withOpacity(0.7),
+                              Colors.white,
+                            ],
+                            stops: const [0.0, 0.5, 1.0],
+                          ),
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _setUserOnBus,
+                          icon: const Icon(
+                            Icons.directions_bus,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            'Estoy en el Bus',
+                            style: TextStyle(fontSize: 18, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade600,
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: resetToSearch,
-                        icon: const Icon(Icons.arrow_back, size: 18),
-                        label: const Text('Otra ruta'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.blue.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: RouteTimeline(
-                    segments: segments,
-                    onStopTap: (point) {
-                      _mapController.move(point, 17.0);
-                    },
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -1379,13 +1676,22 @@ class _DireccionesScreenState extends State<DireccionesScreen> {
 class RouteTimeline extends StatelessWidget {
   final List<Map<String, dynamic>> segments;
   final Function(LatLng)? onStopTap;
+  final EdgeInsetsGeometry? padding;
+  final ScrollController? controller; // Añadir el controller
 
-  const RouteTimeline({super.key, required this.segments, this.onStopTap});
+  const RouteTimeline({
+    super.key,
+    required this.segments,
+    this.onStopTap,
+    this.padding,
+    this.controller, // Aceptar el controller
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      controller: controller, // Usar el controller
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 16.0),
       itemCount: segments.length,
       itemBuilder: (context, index) {
         final segment = segments[index];

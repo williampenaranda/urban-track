@@ -84,9 +84,7 @@ class _RutaDetailScreenState extends State<RutaDetailScreen> {
   }
 
   void _centerMapOnParada(dynamic parada) {
-    final camera = _mapController.camera;
     final ubicacion = parada['ubicacion'];
-
     if (ubicacion != null &&
         ubicacion['latitude'] != null &&
         ubicacion['longitude'] != null) {
@@ -94,20 +92,7 @@ class _RutaDetailScreenState extends State<RutaDetailScreen> {
         ubicacion['latitude'],
         ubicacion['longitude'],
       );
-
-      final targetPoint = camera.project(targetLatLng);
-
-      final screenHeight = MediaQuery.of(context).size.height;
-      final verticalOffset = screenHeight * 0.25;
-
-      final newCenterPoint = Point(
-        targetPoint.x,
-        targetPoint.y + verticalOffset,
-      );
-
-      final newCenterLatLng = camera.unproject(newCenterPoint);
-
-      _mapController.move(newCenterLatLng, camera.zoom);
+      _mapController.move(targetLatLng, _mapController.camera.zoom);
     }
   }
 
@@ -132,7 +117,7 @@ class _RutaDetailScreenState extends State<RutaDetailScreen> {
           // CAPA 1: Mapa de fondo. Debe ser el primer hijo del Stack.
           FlutterMap(
             mapController: _mapController,
-            options: MapOptions(center: _mapCenter, zoom: 14.0),
+            options: MapOptions(initialCenter: _mapCenter, initialZoom: 14.0),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',

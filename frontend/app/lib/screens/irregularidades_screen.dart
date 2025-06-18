@@ -5,14 +5,13 @@ import 'dart:ui';
 import 'package:app/screens/rutas_screen.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'dart:math';
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:app/providers/auth_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../main.dart';
+import 'estaciones_screen.dart';
 
 class IrregularidadesScreen extends StatefulWidget {
   const IrregularidadesScreen({super.key});
@@ -392,10 +391,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
           searchQuery = '$searchQuery, Cartagena, Bolívar, Colombia';
         }
 
-        List<Location> locations = await locationFromAddress(
-          searchQuery,
-          localeIdentifier: 'es_CO',
-        );
+        List<Location> locations = await locationFromAddress(searchQuery);
         List<String> names = [];
         List<Location> filteredLocations = [];
 
@@ -565,7 +561,9 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
     final endpoint = isLike ? 'like' : 'dislike';
     try {
       final response = await http.post(
-        Uri.parse('$apiBaseUrl/api/irregularities/$irregularityId/$endpoint'),
+        Uri.parse(
+          '$apiBaseUrl/api/irregularities/vote/$irregularityId/$endpoint',
+        ),
         headers: {'Authorization': 'Bearer $authToken'},
       );
 
@@ -648,6 +646,7 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           FlutterMap(
@@ -872,7 +871,9 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildFloatingNavBar(),
+      floatingActionButton: _buildReportButton(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: _buildFloatingNavBar(context),
     );
   }
 
@@ -906,15 +907,24 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
     );
   }
 
-  Widget _buildFloatingNavBar() {
+  Widget _buildReportButton() {
+    return FloatingActionButton(
+      onPressed: _handleReportButton,
+      child: const Icon(Icons.edit),
+    );
+  }
+
+  Widget _buildFloatingNavBar(BuildContext context) {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(12.0),
         margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
+          color: Colors.white.withOpacity(0.8),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
+          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
@@ -924,8 +934,8 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               type: BottomNavigationBarType.fixed,
-              selectedItemColor: Colors.black,
-              unselectedItemColor: Colors.black87,
+              selectedItemColor: Colors.blue.shade700,
+              unselectedItemColor: Colors.black54,
               showUnselectedLabels: true,
               items: const [
                 BottomNavigationBarItem(
@@ -947,21 +957,22 @@ class _IrregularidadesScreenState extends State<IrregularidadesScreen> {
               ],
               currentIndex: 3,
               onTap: (index) {
-                if (index == 3) return;
-
-                switch (index) {
-                  case 0:
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                    break;
-                  case 2:
-                    Navigator.pushReplacement(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (_, __, ___) => const RutasScreen(),
-                        transitionDuration: const Duration(seconds: 0),
-                      ),
-                    );
-                    break;
+                if (index == 0) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                } else if (index == 1) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const EstacionesScreen(),
+                    ),
+                  );
+                } else if (index == 2) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RutasScreen(),
+                    ),
+                  );
                 }
               },
             ),

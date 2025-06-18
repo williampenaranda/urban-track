@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 
-const String apiBaseUrl = 'http://10.0.2.2:8000';
+const String apiBaseUrl = 'http://10.0.2.2:8000'; // O la IP de tu máquina
+final String wsApiBaseUrl = apiBaseUrl.replaceFirst('http', 'ws');
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
     ChangeNotifierProvider(
       create: (context) => AuthProvider(),

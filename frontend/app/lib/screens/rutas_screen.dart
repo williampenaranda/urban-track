@@ -4,6 +4,7 @@ import 'package:app/screens/ruta_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:app/screens/irregularidades_screen.dart';
+import 'package:app/screens/estaciones_screen.dart';
 import '../main.dart';
 
 class RutasScreen extends StatefulWidget {
@@ -273,62 +274,7 @@ class _RutasScreenState extends State<RutasScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.all(12.0),
-          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: BottomNavigationBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: Colors.white,
-                unselectedItemColor: Colors.white70,
-                showUnselectedLabels: true,
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.place),
-                    label: 'Direcciones',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.location_city),
-                    label: 'Estaciones',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.alt_route),
-                    label: 'Rutas',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.report_problem),
-                    label: 'Irregularidades',
-                  ),
-                ],
-                currentIndex: 2,
-                onTap: (index) {
-                  if (index == 0) {
-                    Navigator.pop(context);
-                  } else if (index == 3) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const IrregularidadesScreen(),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
+      bottomNavigationBar: _buildFloatingNavBar(context),
     );
   }
 
@@ -344,5 +290,71 @@ class _RutasScreenState extends State<RutasScreen> {
     if (nombre.startsWith('X')) return 'X';
     if (nombre.startsWith('A')) return 'A';
     return '?';
+  }
+
+  Widget _buildFloatingNavBar(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.all(12.0),
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withOpacity(0.3)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: BottomNavigationBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: Colors.white,
+              unselectedItemColor: Colors.white70,
+              showUnselectedLabels: true,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.place),
+                  label: 'Direcciones',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.location_city),
+                  label: 'Estaciones',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.alt_route),
+                  label: 'Rutas',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.report_problem),
+                  label: 'Irregularidades',
+                ),
+              ],
+              currentIndex: 2,
+              onTap: (index) {
+                if (index == 0) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                } else if (index == 1) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const EstacionesScreen(),
+                    ),
+                  );
+                } else if (index == 3) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const IrregularidadesScreen(),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
