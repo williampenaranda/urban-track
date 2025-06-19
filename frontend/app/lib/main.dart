@@ -7,7 +7,7 @@ import 'package:app/screens/estaciones_screen.dart';
 import 'package:app/screens/irregularidades_screen.dart';
 import 'package:app/screens/rutas_screen.dart';
 
-const String apiBaseUrl = 'http://10.0.2.2:8000'; // O la IP de tu máquina
+const String apiBaseUrl = 'http://56.124.36.40';
 final String wsApiBaseUrl = apiBaseUrl.replaceFirst('http', 'ws');
 
 void main() async {
